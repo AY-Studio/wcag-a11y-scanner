@@ -6,7 +6,6 @@ import { ensureDir, slugify, timestampFolder } from '../utils.mjs';
 import { writePageHtmlSummary } from '../report-html.mjs';
 
 function runKeyboardAudit(url, cwd, cacheDir, chromePath) {
-  if (!chromePath) return [];
   const script = new URL('../keyboard-audit.mjs', import.meta.url);
   const result = spawnSync(process.execPath, [script.pathname, url], {
     encoding: 'utf8',
@@ -14,7 +13,7 @@ function runKeyboardAudit(url, cwd, cacheDir, chromePath) {
     env: {
       ...process.env,
       PUPPETEER_CACHE_DIR: cacheDir,
-      A11Y_CHROME_PATH: chromePath
+      ...(chromePath ? { A11Y_CHROME_PATH: chromePath } : {})
     }
   });
   if (result.status !== 0) return [];

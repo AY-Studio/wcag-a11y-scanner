@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import puppeteer from 'puppeteer-core';
 
 const [, , targetUrl] = process.argv;
@@ -9,10 +10,33 @@ if (!targetUrl) {
 
 const timeout = Number(process.env.A11Y_TIMEOUT || 120000);
 const waitMs = Number(process.env.A11Y_WAIT || 1000);
-const chromePath = process.env.A11Y_CHROME_PATH || '';
+let chromePath = process.env.A11Y_CHROME_PATH || '';
 
 if (!chromePath) {
-  console.error('Missing A11Y_CHROME_PATH.');
+  const candidates = process.platform === 'darwin'
+    ? [
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+      ]
+    : process.platform === 'win32'
+      ? [
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+        ]
+      : [
+          '/usr/bin/google-chrome',
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/chromium-browser',
+          '/usr/bin/chromium'
+        ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) chromePath = candidate;
+    if (chromePath) break;
+  }
+}
+
+if (!chromePath) {
+  console.error('Missing A11Y_CHROME_PATH and no system Chrome was found.');
   process.exit(1);
 }
 
