@@ -8,7 +8,7 @@
     "a11y-scanner": "./bin/a11y-scanner.mjs"
   },
   "scripts": {
-    "check": "node --check ./bin/a11y-scanner.mjs && node --check ./src/cli.mjs && node --check ./src/scanners/page.mjs && node --check ./src/scanners/batch.mjs && node --check ./src/scanners/xml.mjs && node --check ./src/report-html.mjs && node --check ./src/keyboard-audit.mjs"
+    "check": "node --check ./bin/a11y-scanner.mjs && node --check ./src/cli.mjs && node --check ./src/audit.mjs && node --check ./src/scanners/page.mjs && node --check ./src/scanners/batch.mjs && node --check ./src/scanners/xml.mjs && node --check ./src/report-html.mjs && node --check ./src/keyboard-audit.mjs && node --check ./src/wcag.mjs"
   },
   "repository": {
     "type": "git",
