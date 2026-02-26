@@ -1,10 +1,47 @@
 # WCAG A11y Scanner
 
-Reusable accessibility scanner CLI for any site (WP or non-WP):
+CLI for fast WCAG accessibility audits with page, URL-list, and XML sitemap scanning, plus JSON/HTML reports for local testing, regression checks, and benchmarking.
+
+## Overview
+
+`WCAG A11y Scanner` is a reusable command-line tool for running accessibility audits on any website, including local development domains (for example, `.local` sites) and live URLs.
+
+It is built for:
+- rapid on-the-fly checks while building features
+- full-site scanning from XML sitemaps
+- repeatable benchmarking across releases and environments
+- clear reporting for developers, QA, clients, and stakeholders
+
+## How It Works
+
+The scanner combines standards-based checks with practical workflow tooling:
+- scans a single page, URL list, or XML sitemap
+- produces timestamped per-page JSON reports for technical fixing
+- generates per-page HTML summaries for human review
+- creates batch summaries to identify repeated template-level issues quickly
+- supports local runs and CI-style repeatability
+
+## Why Teams Use It
+
+- Saves time by surfacing duplicate accessibility issues across templates.
+- Makes accessibility measurable with consistent, repeatable reports.
+- Supports both engineering workflows (JSON detail) and stakeholder reporting (HTML summaries).
+- Works for fast spot checks and large-scale benchmark audits.
+
+## Typical Use Cases
+
+- Pre-release accessibility sweeps
+- Local vs staging vs production accessibility comparisons
+- Validation after theme/template updates
+- Benchmarking against third-party tools
+- Reporting progress against WCAG remediation plans
+
+## Core Features
+
 - Pa11y JSON scanning
-- custom keyboard audit (extra WCAG heuristics)
-- per-page JSON + HTML report
-- batch summary report
+- Custom keyboard audit (extra WCAG heuristics)
+- Per-page JSON + HTML report output
+- Batch summary report output
 - XML sitemap crawling
 
 ## Install
