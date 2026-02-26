@@ -1,4 +1,4 @@
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 
 const [, , targetUrl] = process.argv;
 
@@ -9,6 +9,12 @@ if (!targetUrl) {
 
 const timeout = Number(process.env.A11Y_TIMEOUT || 120000);
 const waitMs = Number(process.env.A11Y_WAIT || 1000);
+const chromePath = process.env.A11Y_CHROME_PATH || '';
+
+if (!chromePath) {
+  console.error('Missing A11Y_CHROME_PATH.');
+  process.exit(1);
+}
 
 const pointerEvents = ['click', 'dblclick', 'mousedown', 'mouseup', 'mouseover', 'mouseout', 'mousemove', 'pointerdown', 'pointerup', 'touchstart', 'touchend'];
 const keyboardEvents = ['keydown', 'keyup', 'keypress', 'focus', 'blur'];
@@ -17,6 +23,7 @@ let browser;
 
 try {
   browser = await puppeteer.launch({
+    executablePath: chromePath,
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
@@ -263,305 +270,152 @@ try {
       return cleanText(el.textContent);
     }
 
-    function isDecorativeImage(img) {
-      const role = cleanText(img.getAttribute('role')).toLowerCase();
-      if (role === 'presentation' || role === 'none') return true;
-      if (img.getAttribute('aria-hidden') === 'true') return true;
-      if (img.closest('[aria-hidden="true"]')) return true;
-      return false;
+    function describeNode(el) {
+      const name = accessibleName(el);
+      const role = cleanText(el.getAttribute('role'));
+      const tag = el.tagName.toLowerCase();
+      const descriptor = cleanText(name || role || tag || 'element');
+      return descriptor.slice(0, 120);
     }
 
-    function isInteractiveElement(el) {
-      if (!(el instanceof Element)) return false;
-      if (el.matches('a[href], button, input:not([type="hidden"]), select, textarea, summary')) return true;
-      if (el.hasAttribute('contenteditable')) return true;
-      const tabindex = el.getAttribute('tabindex');
-      if (tabindex !== null && Number(tabindex) >= 0) return true;
-      const role = cleanText(el.getAttribute('role')).toLowerCase();
-      if (role && interactiveRoles.has(role)) return true;
-      if (['aria-expanded', 'aria-controls', 'aria-haspopup', 'aria-pressed'].some((attr) => el.hasAttribute(attr))) return true;
-      return false;
-    }
-
-    function isLikelyContainerOnly(el) {
-      if (!(el instanceof Element)) return false;
-      if (el.matches('html, body')) return true;
-      if (el.matches('.swiper, .swiper-container, .swiper-wrapper')) return true;
-      const focusableChildren = el.querySelector('a[href], button, input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])');
-      if (focusableChildren && !el.hasAttribute('role') && !el.hasAttribute('tabindex')) {
-        return true;
-      }
-      return false;
-    }
-
-    function isFocusableCandidate(el) {
-      if (!isVisible(el)) return false;
-      if (el.hasAttribute('disabled')) return false;
-      if (el.getAttribute('tabindex') === '-1') return false;
-      return isInteractiveElement(el);
-    }
-
-    const issuesOut = [];
-    const dedupe = new Set();
-
-    function pushIssue(el, code, message, type = 'warning', typeCode = 2) {
-      const selector = cssPath(el);
-      const context = cleanText((el && el.outerHTML) || '').slice(0, 400);
-      const key = `${code}::${selector}::${message}`;
-      if (dedupe.has(key)) return;
-      dedupe.add(key);
-      issuesOut.push({
+    function issue({ code, type = 'error', message, selector, context, runner = 'custom-keyboard-audit', criterion = null }) {
+      return {
         code,
         type,
-        typeCode,
+        typeCode: type === 'error' ? 1 : type === 'warning' ? 2 : 3,
         message,
         context,
         selector,
-        runner: 'custom-keyboard-audit',
-        runnerExtras: {}
+        runner,
+        runnerExtras: criterion ? { criterion } : undefined
+      };
+    }
+
+    const issues = [];
+    const seen = new Set();
+
+    function pushIssue(data) {
+      const key = `${data.code}::${data.selector}::${data.message}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      issues.push(issue(data));
+    }
+
+    const focusables = Array.from(document.querySelectorAll('a, button, input, select, textarea, summary, [tabindex], [role], [contenteditable]'));
+
+    for (const el of focusables) {
+      if (!isVisible(el)) continue;
+
+      const selector = cssPath(el);
+      const tag = el.tagName.toLowerCase();
+      const role = cleanText(el.getAttribute('role')).toLowerCase();
+      const name = accessibleName(el);
+
+      if ((tag === 'a' || role === 'link') && !name) {
+        pushIssue({
+          code: 'WCAG2A.Principle4.Guideline4_1.4_1_2.H91.A.Empty',
+          message: 'Link has no accessible name.',
+          selector,
+          context: `Element: ${describeNode(el)}`,
+          criterion: '4.1.2'
+        });
+      }
+
+      if (!name && (isNativeKeyboardElement(el) || interactiveRoles.has(role) || el.hasAttribute('onclick'))) {
+        pushIssue({
+          code: 'WCAG2A.Principle4.Guideline4_1.4_1_2.H91.A.Name',
+          message: 'Interactive element has no accessible name.',
+          selector,
+          context: `Element: ${describeNode(el)}`,
+          criterion: '4.1.2'
+        });
+      }
+
+      if (tag === 'a') {
+        const text = cleanText(name).toLowerCase();
+        if (text && genericLinkTexts.has(text)) {
+          pushIssue({
+            code: 'WCAG2A.Principle2.Guideline2_4.2_4_4.H30.2',
+            message: 'Link text is not descriptive enough.',
+            selector,
+            context: `Link text: "${cleanText(name)}"`,
+            criterion: '2.4.4'
+          });
+        }
+      }
+
+      const pointerOnly = hasHandler(el, pointerEventsSet, 'on') && !hasHandler(el, keyboardEventsSet, 'on');
+      const keyboardInaccessible = pointerOnly && !isKeyboardFocusable(el);
+      if (keyboardInaccessible) {
+        pushIssue({
+          code: 'WCAG2A.Principle2.Guideline2_1.2_1_1.SCR2.G202.Fail',
+          message: 'Element has pointer interaction but is not keyboard accessible.',
+          selector,
+          context: `Element: ${describeNode(el)}`,
+          criterion: '2.1.1'
+        });
+      }
+    }
+
+    const skipTargets = [
+      '#main',
+      '#content',
+      '#primary',
+      '#main-content',
+      '[role="main"]',
+      'main'
+    ];
+
+    const skipLinks = Array.from(document.querySelectorAll('a[href^="#"]')).filter((a) => {
+      const text = cleanText(a.textContent).toLowerCase();
+      const href = cleanText(a.getAttribute('href')).toLowerCase();
+      return text.startsWith('skip') || href.includes('main') || href.includes('content');
+    });
+
+    const hasMain = skipTargets.some((sel) => document.querySelector(sel));
+    if (!skipLinks.length || !hasMain) {
+      pushIssue({
+        code: 'WCAG2A.Principle2.Guideline2_4.2_4_1.G1',
+        message: 'No valid skip link to main content detected.',
+        selector: 'body',
+        context: 'Expected a keyboard-visible skip link pointing to main content.',
+        criterion: '2.4.1'
       });
     }
 
-    const allElements = Array.from(document.querySelectorAll('*'));
+    const fieldSelectors = 'input:not([type="hidden"]), select, textarea';
+    const fields = Array.from(document.querySelectorAll(fieldSelectors));
+    for (const field of fields) {
+      if (!isVisible(field)) continue;
 
-    // WCAG 2.1.1 (keyboard): non-focusable elements that act interactive.
-    for (const el of allElements) {
-      if (!isVisible(el)) continue;
+      const inputType = cleanText(field.getAttribute('type')).toLowerCase();
+      if (['button', 'submit', 'reset', 'image'].includes(inputType)) continue;
 
-      if (
-        el.closest('a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex]:not([tabindex="-1"]), [contenteditable]')
-        && !isKeyboardFocusable(el)
-      ) {
-        continue;
-      }
-
-      const hasPointerHandler = hasHandler(el, pointerEventsSet, 'on');
-      const hasKeyboardHandler = hasHandler(el, keyboardEventsSet, 'on');
-      const role = cleanText(el.getAttribute('role')).toLowerCase();
-      const hasInteractiveRole = role && interactiveRoles.has(role);
-      const hasInteractiveAria = ['aria-expanded', 'aria-controls', 'aria-haspopup', 'aria-pressed'].some((attr) => el.hasAttribute(attr));
-
-      if (!(hasPointerHandler || hasInteractiveRole || hasInteractiveAria)) {
-        continue;
-      }
-
-      if (isLikelyContainerOnly(el)) {
-        continue;
-      }
-
-      if (isKeyboardFocusable(el)) {
-        continue;
-      }
-
-      let reason = 'Potential keyboard-only issue: interactive element is not keyboard focusable.';
-      if (hasPointerHandler && !hasKeyboardHandler) {
-        reason = 'Potential keyboard-only issue: pointer interaction detected without keyboard handler on non-focusable element.';
-      } else if (hasInteractiveRole || hasInteractiveAria) {
-        reason = 'Potential keyboard-only issue: interactive role/ARIA state on non-focusable element.';
-      }
-
-      pushIssue(
-        el,
-        'WCAG2AAA.Principle2.Guideline2_1.2_1_1.Custom.KeyboardOnly',
-        reason,
-        'warning',
-        2
-      );
-    }
-
-    // WCAG 1.1.1 (non-text content): images without usable alt text.
-    for (const img of document.querySelectorAll('img')) {
-      if (img.matches('.lb-image, .lazyload-placeholder')) continue;
-      const alt = img.getAttribute('alt');
-      if (alt === null) {
-        pushIssue(
-          img,
-          'WCAG2AAA.Principle1.Guideline1_1.1_1_1.Custom.ImageAltMissing',
-          'Image is missing an alt attribute.',
-          'error',
-          1
-        );
-        continue;
-      }
-
-      if (cleanText(alt) === '' && !isDecorativeImage(img)) {
-        const parentLink = img.closest('a[href], button');
-        const parentName = parentLink ? accessibleName(parentLink) : '';
-        if (!parentName) {
-          pushIssue(
-            img,
-            'WCAG2AAA.Principle1.Guideline1_1.1_1_1.Custom.ImageAltEmpty',
-            'Image has empty alt text but does not appear decorative.',
-            'warning',
-            2
-          );
-        }
-      }
-    }
-
-    // WCAG 4.1.2 + 1.3.1: interactive controls need accessible names/labels.
-    const candidateSelector = 'a[href], button, input:not([type="hidden"]), select, textarea, summary, [role], [tabindex], [contenteditable]';
-    for (const el of document.querySelectorAll(candidateSelector)) {
-      if (!isVisible(el)) continue;
-      if (!isInteractiveElement(el)) continue;
-
-      const name = accessibleName(el);
+      const name = getLabelTextForControl(field);
       if (!name) {
-        pushIssue(
-          el,
-          'WCAG2AAA.Principle4.Guideline4_1.4_1_2.Custom.NameMissing',
-          'Interactive element is missing an accessible name.',
-          'error',
-          1
-        );
-      }
-
-      if (el.matches('input:not([type="hidden"]), select, textarea')) {
-        const inputType = cleanText(el.getAttribute('type')).toLowerCase();
-        const shouldRequireLabel = !['submit', 'button', 'reset', 'image'].includes(inputType);
-        if (!shouldRequireLabel) {
-          continue;
-        }
-        const label = getLabelTextForControl(el);
-        if (!label) {
-          pushIssue(
-            el,
-            'WCAG2AAA.Principle1.Guideline1_3.1_3_1.Custom.FormLabelMissing',
-            'Form control is missing a label or equivalent programmatic description.',
-            'warning',
-            2
-          );
-        }
+        pushIssue({
+          code: 'WCAG2A.Principle1.Guideline1_3.1_3_1.F68',
+          message: 'Form control is missing a programmatic label.',
+          selector: cssPath(field),
+          context: `Field: ${describeNode(field)}`,
+          criterion: '1.3.1'
+        });
       }
     }
 
-    // WCAG 2.4.4: links should be descriptive.
-    for (const link of document.querySelectorAll('a[href]')) {
-      if (!isVisible(link)) continue;
-      const name = cleanText(accessibleName(link)).toLowerCase();
-      if (!name) {
-        pushIssue(
-          link,
-          'WCAG2AAA.Principle2.Guideline2_4.2_4_4.Custom.LinkPurposeMissing',
-          'Link has no discernible descriptive text.',
-          'error',
-          1
-        );
-        continue;
-      }
-
-      const normalized = name.replace(/[^\w\s]/g, '').trim();
-      if (genericLinkTexts.has(normalized)) {
-        pushIssue(
-          link,
-          'WCAG2AAA.Principle2.Guideline2_4.2_4_4.Custom.LinkPurposeWeak',
-          'Link text is generic and may not be descriptive enough out of context.',
-          'warning',
-          2
-        );
-      }
-    }
-
-    // WCAG 2.4.1: skip links at top of page with valid target.
-    const allSkipLinks = Array.from(document.querySelectorAll('a[href^="#"]')).filter((a) => {
-      const text = cleanText(a.textContent).toLowerCase();
-      const klass = cleanText(a.className).toLowerCase();
-      return text.includes('skip') || klass.includes('skip-link');
-    });
-
-    if (!allSkipLinks.length) {
-      pushIssue(
-        document.body,
-        'WCAG2AAA.Principle2.Guideline2_4.2_4_1.Custom.SkipLinkMissing',
-        'No skip link was found to bypass repeated navigation.',
-        'error',
-        1
-      );
-    } else {
-      let hasValidTarget = false;
-      for (const skipLink of allSkipLinks) {
-        const targetHref = cleanText(skipLink.getAttribute('href'));
-        const id = targetHref.startsWith('#') ? decodeURIComponent(targetHref.slice(1)) : '';
-        const target = id ? document.getElementById(id) : null;
-        if (!target) {
-          pushIssue(
-            skipLink,
-            'WCAG2AAA.Principle2.Guideline2_4.2_4_1.Custom.SkipTargetMissing',
-            'Skip link target does not exist in the document.',
-            'error',
-            1
-          );
-        } else {
-          hasValidTarget = true;
-        }
-      }
-
-      if (!hasValidTarget) {
-        pushIssue(
-          document.body,
-          'WCAG2AAA.Principle2.Guideline2_4.2_4_1.Custom.SkipNoValidTarget',
-          'Skip links exist but none point to a valid target.',
-          'error',
-          1
-        );
-      }
-
-      const focusCandidates = Array.from(document.querySelectorAll('a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex], [contenteditable]'))
-        .filter(isFocusableCandidate)
-        .slice(0, 8);
-      const skipInEarlyOrder = allSkipLinks.some((link) => focusCandidates.includes(link));
-      if (!skipInEarlyOrder) {
-        pushIssue(
-          allSkipLinks[0],
-          'WCAG2AAA.Principle2.Guideline2_4.2_4_1.Custom.SkipLateInOrder',
-          'Skip link is not among the first focusable controls in tab order.',
-          'warning',
-          2
-        );
-      }
-    }
-
-    // WCAG 3.2.2: detect likely unexpected context changes.
-    for (const el of document.querySelectorAll('[onchange],[onblur]')) {
-      if (!isVisible(el)) continue;
-      const code = `${cleanText(el.getAttribute('onchange'))};${cleanText(el.getAttribute('onblur'))}`.toLowerCase();
-      if (/location\.|window\.open|submit\(|form\.submit/.test(code)) {
-        pushIssue(
-          el,
-          'WCAG2AAA.Principle3.Guideline3_2.3_2_2.Custom.UnexpectedContextChange',
-          'Element appears to trigger a context change on input/blur without an explicit user request.',
-          'warning',
-          2
-        );
-      }
-    }
-
-    // WCAG 2.4.5: multiple ways heuristic.
-    const hasSearch = Boolean(document.querySelector('form[role="search"], input[type="search"], [aria-label*="search" i], [class*="search"]'));
-    const hasSitemapLink = Boolean(Array.from(document.querySelectorAll('a[href]')).find((a) => /sitemap/i.test(`${a.getAttribute('href') || ''} ${a.textContent || ''}`)));
-    const hasBreadcrumbs = Boolean(document.querySelector('[aria-label*="breadcrumb" i], .breadcrumb, .breadcrumbs, nav[aria-label*="breadcrumb" i]'));
-    const navLinkCount = document.querySelectorAll('nav a[href]').length;
-    if (!hasSearch && !hasSitemapLink && !hasBreadcrumbs && navLinkCount < 5) {
-      pushIssue(
-        document.body,
-        'WCAG2AAA.Principle2.Guideline2_4.2_4_5.Custom.MultipleWaysHeuristic',
-        'Page does not appear to expose multiple navigation methods (search, sitemap, breadcrumbs, or robust navigation).',
-        'warning',
-        2
-      );
-    }
-
-    return issuesOut;
+    return issues;
   }, pointerEvents, keyboardEvents);
 
-  process.stdout.write(JSON.stringify(issues));
-  process.exit(0);
-} catch (err) {
-  const msg = err && err.message ? err.message : 'Keyboard audit failed.';
-  console.error(msg);
-  process.exit(1);
+  process.stdout.write(`${JSON.stringify(issues)}\n`);
+} catch (error) {
+  console.error(error?.stack || String(error));
+  process.exitCode = 1;
 } finally {
   if (browser) {
-    await browser.close();
+    try {
+      await browser.close();
+    } catch {
+      // no-op
+    }
   }
 }

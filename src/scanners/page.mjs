@@ -5,14 +5,15 @@ import { ensureChrome } from '../ensure-browser.mjs';
 import { ensureDir, slugify, timestampFolder } from '../utils.mjs';
 import { writePageHtmlSummary } from '../report-html.mjs';
 
-function runKeyboardAudit(url, cwd, cacheDir) {
+function runKeyboardAudit(url, cwd, cacheDir, chromePath) {
   const script = new URL('../keyboard-audit.mjs', import.meta.url);
   const result = spawnSync(process.execPath, [script.pathname, url], {
     encoding: 'utf8',
     cwd,
     env: {
       ...process.env,
-      PUPPETEER_CACHE_DIR: cacheDir
+      PUPPETEER_CACHE_DIR: cacheDir,
+      A11Y_CHROME_PATH: chromePath
     }
   });
   if (result.status !== 0) return [];
@@ -26,10 +27,24 @@ function runKeyboardAudit(url, cwd, cacheDir) {
   }
 }
 
-export function scanPage(url, cfg) {
+function pa11yInvocation(cwd) {
+  const localBin = path.join(cwd, 'node_modules', '.bin', process.platform === 'win32' ? 'pa11y.cmd' : 'pa11y');
+  if (fs.existsSync(localBin)) {
+    return {
+      command: localBin,
+      args: []
+    };
+  }
+  return {
+    command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    args: ['--yes', 'pa11y@9.0.1']
+  };
+}
+
+export async function scanPage(url, cfg) {
   const cwd = cfg.cwd || process.cwd();
   const cacheDir = path.resolve(cwd, '.cache', 'puppeteer');
-  ensureChrome(cacheDir);
+  const chromePath = await ensureChrome(cacheDir);
 
   const reportRoot = path.resolve(cwd, cfg.outputDir, timestampFolder());
   ensureDir(reportRoot);
@@ -37,19 +52,22 @@ export function scanPage(url, cfg) {
   const jsonFile = path.join(reportRoot, `${slug}.json`);
   const htmlFile = path.join(reportRoot, `${slug}.html`);
 
-  const pa11yArgs = ['pa11y', url, '--reporter', 'json', '--standard', cfg.standard || 'WCAG2AAA', '--timeout', String(cfg.timeout), '--wait', String(cfg.wait)];
+  const runner = pa11yInvocation(cwd);
+  const pa11yArgs = [...runner.args, url, '--reporter', 'json', '--standard', cfg.standard || 'WCAG2AAA', '--timeout', String(cfg.timeout), '--wait', String(cfg.wait)];
   if (cfg.includeAll || cfg.includeWarnings) pa11yArgs.push('--include-warnings');
   if (cfg.includeAll || cfg.includeNotices) pa11yArgs.push('--include-notices');
   if (Array.isArray(cfg.hideElements)) {
     for (const s of cfg.hideElements) pa11yArgs.push('--hide-elements', s);
   }
 
-  const run = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', pa11yArgs, {
+  const run = spawnSync(runner.command, pa11yArgs, {
     cwd,
     encoding: 'utf8',
     env: {
       ...process.env,
-      PUPPETEER_CACHE_DIR: cacheDir
+      PUPPETEER_CACHE_DIR: cacheDir,
+      PUPPETEER_EXECUTABLE_PATH: chromePath,
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
     }
   });
 
@@ -74,7 +92,7 @@ export function scanPage(url, cfg) {
     }];
   }
 
-  const customIssues = runKeyboardAudit(url, cwd, cacheDir);
+  const customIssues = runKeyboardAudit(url, cwd, cacheDir, chromePath);
   if (customIssues.length) {
     const dedupe = new Set(issues.map((i) => `${i.code || ''}::${i.selector || ''}::${i.message || ''}`));
     for (const issue of customIssues) {

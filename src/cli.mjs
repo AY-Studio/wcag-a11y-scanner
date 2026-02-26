@@ -67,7 +67,7 @@ export async function runCli(argv) {
   });
 
   if (sub === 'page') {
-    const result = scanPage(target, cfg);
+    const result = await scanPage(target, cfg);
     const errors = result.typeCounts.error || 0;
     const warnings = result.typeCounts.warning || 0;
     const notices = result.typeCounts.notice || 0;
@@ -81,7 +81,7 @@ export async function runCli(argv) {
   if (sub === 'list') {
     const urls = readUrlList(path.resolve(target));
     if (!urls.length) throw new Error(`No URLs found in ${target}`);
-    const result = scanBatch(urls, cfg, target);
+    const result = await scanBatch(urls, cfg, target);
     console.log(`Saved batch reports to: ${result.reportRoot}`);
     console.log(`Saved summary: ${result.summaryFile}`);
     return;
@@ -96,7 +96,7 @@ export async function runCli(argv) {
     const urlListFile = path.join(urlListDir, `urls-${Date.now()}.txt`);
     fs.writeFileSync(urlListFile, `${urls.join('\n')}\n`, 'utf8');
 
-    const result = scanBatch(urls, cfg, path.relative(cwd, urlListFile));
+    const result = await scanBatch(urls, cfg, path.relative(cwd, urlListFile));
     console.log(`Saved URL list: ${urlListFile}`);
     console.log(`Saved batch reports to: ${result.reportRoot}`);
     console.log(`Saved summary: ${result.summaryFile}`);

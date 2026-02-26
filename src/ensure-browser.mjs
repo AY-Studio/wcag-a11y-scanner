@@ -1,39 +1,60 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { install, Browser, detectBrowserPlatform, resolveBuildId, computeExecutablePath } from '@puppeteer/browsers';
 
-export function ensureChrome(cacheDir) {
+function findChromeExecutable(cacheDir) {
   const chromeRoot = path.join(cacheDir, 'chrome');
+  if (!fs.existsSync(chromeRoot)) return null;
 
-  function hasInstalledChrome() {
-    if (!fs.existsSync(chromeRoot)) return false;
-    const queue = [chromeRoot];
-    let depth = 0;
-    while (queue.length && depth < 8) {
-      const dir = queue.shift();
-      const names = fs.readdirSync(dir);
-      for (const name of names) {
-        const full = path.join(dir, name);
-        const stat = fs.statSync(full);
-        if (stat.isDirectory()) queue.push(full);
-        if (name === 'Google Chrome for Testing' || name === 'chrome' || name === 'chrome.exe') return true;
+  const queue = [chromeRoot];
+  while (queue.length) {
+    const dir = queue.shift();
+    const names = fs.readdirSync(dir);
+    for (const name of names) {
+      const full = path.join(dir, name);
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) {
+        queue.push(full);
+      } else if (name === 'Google Chrome for Testing' || name === 'chrome' || name === 'chrome.exe') {
+        return full;
       }
-      depth += 1;
     }
-    return false;
   }
 
-  if (hasInstalledChrome()) return;
+  return null;
+}
 
-  const result = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['puppeteer', 'browsers', 'install', 'chrome'], {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      PUPPETEER_CACHE_DIR: cacheDir
-    }
+export async function ensureChrome(cacheDir) {
+  fs.mkdirSync(cacheDir, { recursive: true });
+
+  const existing = findChromeExecutable(cacheDir);
+  if (existing) return existing;
+
+  const platform = detectBrowserPlatform();
+  if (!platform) {
+    throw new Error('Unsupported platform for Chrome installation via Puppeteer.');
+  }
+
+  const buildId = await resolveBuildId(Browser.CHROME, platform, 'stable');
+  await install({
+    browser: Browser.CHROME,
+    buildId,
+    cacheDir,
+    platform,
+    unpack: true
   });
 
-  if (result.status !== 0) {
-    throw new Error('Failed to install Puppeteer Chrome.');
-  }
+  const computed = computeExecutablePath({
+    browser: Browser.CHROME,
+    buildId,
+    cacheDir,
+    platform
+  });
+
+  if (computed && fs.existsSync(computed)) return computed;
+
+  const discovered = findChromeExecutable(cacheDir);
+  if (discovered) return discovered;
+
+  throw new Error('Chrome installation completed, but executable was not found in cache.');
 }

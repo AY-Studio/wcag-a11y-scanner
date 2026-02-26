@@ -1,6 +1,6 @@
 {
   "name": "wcag-a11y-scanner",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "WCAG A11y Scanner - reusable accessibility scanner CLI (Pa11y + custom audits + sitemap support)",
   "type": "module",
   "bin": {
@@ -31,7 +31,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "pa11y": "^9.0.1",
-    "puppeteer": "^24.22.3"
+    "@puppeteer/browsers": "^2.10.12",
+    "puppeteer-core": "^24.22.3"
   }
 }
