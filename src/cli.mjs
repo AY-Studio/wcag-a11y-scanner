@@ -6,7 +6,6 @@ import { scanPage } from './scanners/page.mjs';
 import { scanBatch } from './scanners/batch.mjs';
 import { urlsFromSitemap } from './scanners/xml.mjs';
 import { runAuditBatch, runAuditFromList, runAuditFromXml, runAuditPage } from './audit.mjs';
-import { targetStandardFromLevel } from './wcag.mjs';
 
 function parseArgs(argv) {
   const out = { _: [] };
@@ -79,7 +78,7 @@ export async function runCli(argv) {
       const result = await runAuditPage(target, {
         ...cfg,
         auditLevel,
-        standard: args.standard || targetStandardFromLevel(auditLevel),
+        scanStandard: args.standard || cfg.standard || 'WCAG2AAA',
         auditOutputDir: args['output-dir'] || 'a11y/audits'
       }, target);
       console.log(`Audit complete: ${result.summary.overall.status} (${result.summary.target.standard})`);
@@ -105,7 +104,7 @@ export async function runCli(argv) {
       const result = await runAuditFromList(target, {
         ...cfg,
         auditLevel,
-        standard: args.standard || targetStandardFromLevel(auditLevel),
+        scanStandard: args.standard || cfg.standard || 'WCAG2AAA',
         auditOutputDir: args['output-dir'] || 'a11y/audits'
       });
       console.log(`Audit complete: ${result.summary.overall.status} (${result.summary.target.standard})`);
@@ -131,7 +130,7 @@ export async function runCli(argv) {
         {
           ...cfg,
           auditLevel,
-          standard: args.standard || targetStandardFromLevel(auditLevel),
+          scanStandard: args.standard || cfg.standard || 'WCAG2AAA',
           auditOutputDir: args['output-dir'] || 'a11y/audits'
         },
         cwd

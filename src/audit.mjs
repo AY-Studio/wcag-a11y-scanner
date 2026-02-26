@@ -173,6 +173,7 @@ table{width:100%;border-collapse:collapse;min-width:760px}th,td{padding:9px 10px
 </style></head><body><main>
 <h1>WCAG Compliance Audit</h1>
 <p>Source: <code>${esc(summary.source)}</code> · Generated: ${esc(summary.generatedAt)}</p>
+<p>Target: <strong>${esc(summary.target.standard)}</strong> · Scan Depth: <strong>${esc(summary.target.scanStandard || summary.target.standard)}</strong></p>
 <div class="top"><span class="badge ${summary.overall.status === 'PASS' ? 'pass' : summary.overall.status === 'FAIL' ? 'fail' : 'norun'}">${esc(summary.target.standard)} ${esc(summary.overall.status)}</span></div>
 <section class="metrics">
 <div class="metric"><div class="k">Pages Requested</div><div class="v">${summary.pages.requested}</div></div>
@@ -205,10 +206,11 @@ function readIssuesFromJson(absPath) {
 
 export async function runAuditPage(url, cfg, sourceLabel = 'page') {
   const targetLevel = normalizeTargetLevel(cfg.auditLevel);
-  const targetStandard = cfg.standard || targetStandardFromLevel(targetLevel);
+  const targetStandard = targetStandardFromLevel(targetLevel);
+  const scanStandard = cfg.scanStandard || cfg.standard || 'WCAG2AAA';
   const runCfg = {
     ...cfg,
-    standard: targetStandard,
+    standard: scanStandard,
     outputDir: cfg.auditOutputDir || 'a11y/audits'
   };
 
@@ -223,6 +225,7 @@ export async function runAuditPage(url, cfg, sourceLabel = 'page') {
     generatedAt: new Date().toISOString(),
     source: sourceLabel
   });
+  summary.target.scanStandard = scanStandard;
 
   const auditJsonFile = path.join(pageResult.reportRoot, 'audit.json');
   const auditHtmlFile = path.join(pageResult.reportRoot, 'audit.html');
@@ -240,10 +243,11 @@ export async function runAuditPage(url, cfg, sourceLabel = 'page') {
 
 export async function runAuditBatch(urls, cfg, sourceLabel = 'urls.txt') {
   const targetLevel = normalizeTargetLevel(cfg.auditLevel);
-  const targetStandard = cfg.standard || targetStandardFromLevel(targetLevel);
+  const targetStandard = targetStandardFromLevel(targetLevel);
+  const scanStandard = cfg.scanStandard || cfg.standard || 'WCAG2AAA';
   const runCfg = {
     ...cfg,
-    standard: targetStandard,
+    standard: scanStandard,
     outputDir: cfg.auditOutputDir || 'a11y/audits'
   };
 
@@ -262,6 +266,7 @@ export async function runAuditBatch(urls, cfg, sourceLabel = 'urls.txt') {
     generatedAt: new Date().toISOString(),
     source: sourceLabel
   });
+  summary.target.scanStandard = scanStandard;
 
   const auditJsonFile = path.join(batchResult.reportRoot, 'audit.json');
   const auditHtmlFile = path.join(batchResult.reportRoot, 'audit.html');
