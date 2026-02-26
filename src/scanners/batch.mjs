@@ -62,7 +62,11 @@ export async function scanBatch(urls, cfg, sourceLabel = 'urls.txt') {
     const htmlFile = path.join(reportRoot, `${slug}.html`);
 
     const runner = pa11yInvocation(cwd);
-    const pa11yArgs = [...runner.args, url, '--reporter', 'json', '--standard', cfg.standard || 'WCAG2AAA', '--timeout', String(cfg.timeout), '--wait', String(cfg.wait)];
+    const chromeLaunchConfig = JSON.stringify({
+      ignoreHTTPSErrors: true,
+      args: ['--allow-insecure-localhost', '--ignore-certificate-errors', '--no-sandbox', '--disable-dev-shm-usage']
+    });
+    const pa11yArgs = [...runner.args, url, '--reporter', 'json', '--standard', cfg.standard || 'WCAG2AAA', '--timeout', String(cfg.timeout), '--wait', String(cfg.wait), '--chrome-launch-config', chromeLaunchConfig];
     if (cfg.includeAll || cfg.includeWarnings) pa11yArgs.push('--include-warnings');
     if (cfg.includeAll || cfg.includeNotices) pa11yArgs.push('--include-notices');
     if (Array.isArray(cfg.hideElements)) {
