@@ -34,9 +34,9 @@ function usage() {
     '  wcag-a11y-scanner scan page <url> [--output-dir <dir>]',
     '  wcag-a11y-scanner scan list <urls.txt> [--output-dir <dir>]',
     '  wcag-a11y-scanner scan xml <sitemap.xml> [--base-url <url>] [--output-dir <dir>]',
-    '  wcag-a11y-scanner audit page <url> [--level AA|AAA] [--output-dir <dir>]',
-    '  wcag-a11y-scanner audit list <urls.txt> [--level AA|AAA] [--output-dir <dir>]',
-    '  wcag-a11y-scanner audit xml <sitemap.xml> [--base-url <url>] [--level AA|AAA] [--output-dir <dir>]'
+    '  wcag-a11y-scanner audit page <url> [--output-dir <dir>]',
+    '  wcag-a11y-scanner audit list <urls.txt> [--output-dir <dir>]',
+    '  wcag-a11y-scanner audit xml <sitemap.xml> [--base-url <url>] [--output-dir <dir>]'
   ].join('\n');
 }
 
@@ -74,10 +74,8 @@ export async function runCli(argv) {
 
   if (sub === 'page') {
     if (cmd === 'audit') {
-      const auditLevel = String(args.level || 'AA').toUpperCase() === 'AAA' ? 'AAA' : 'AA';
       const result = await runAuditPage(target, {
         ...cfg,
-        auditLevel,
         scanStandard: args.standard || cfg.standard || 'WCAG2AAA',
         auditOutputDir: args['output-dir'] || 'a11y/audits'
       }, target);
@@ -100,10 +98,8 @@ export async function runCli(argv) {
 
   if (sub === 'list') {
     if (cmd === 'audit') {
-      const auditLevel = String(args.level || 'AA').toUpperCase() === 'AAA' ? 'AAA' : 'AA';
       const result = await runAuditFromList(target, {
         ...cfg,
-        auditLevel,
         scanStandard: args.standard || cfg.standard || 'WCAG2AAA',
         auditOutputDir: args['output-dir'] || 'a11y/audits'
       });
@@ -123,13 +119,11 @@ export async function runCli(argv) {
 
   if (sub === 'xml') {
     if (cmd === 'audit') {
-      const auditLevel = String(args.level || 'AA').toUpperCase() === 'AAA' ? 'AAA' : 'AA';
       const result = await runAuditFromXml(
         target,
         args['base-url'] || '',
         {
           ...cfg,
-          auditLevel,
           scanStandard: args.standard || cfg.standard || 'WCAG2AAA',
           auditOutputDir: args['output-dir'] || 'a11y/audits'
         },
