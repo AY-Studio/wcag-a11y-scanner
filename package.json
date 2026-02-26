@@ -1,6 +1,6 @@
 {
   "name": "wcag-a11y-scanner",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "WCAG A11y Scanner - reusable accessibility scanner CLI (Pa11y + custom audits + sitemap support)",
   "type": "module",
   "bin": {
