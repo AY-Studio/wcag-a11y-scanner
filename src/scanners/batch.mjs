@@ -41,6 +41,41 @@ function pa11yInvocation(cwd) {
   };
 }
 
+function runPa11yScan({ runner, url, cfg, cwd, cacheDir, chromePath }) {
+  const buildArgs = (targetUrl) => {
+    const args = [...runner.args, targetUrl, '--reporter', 'json', '--standard', cfg.standard || 'WCAG2AAA', '--timeout', String(cfg.timeout), '--wait', String(cfg.wait)];
+    if (cfg.includeAll || cfg.includeWarnings) args.push('--include-warnings');
+    if (cfg.includeAll || cfg.includeNotices) args.push('--include-notices');
+    if (Array.isArray(cfg.hideElements)) {
+      for (const s of cfg.hideElements) args.push('--hide-elements', s);
+    }
+    return args;
+  };
+
+  const runOnce = (targetUrl) => spawnSync(runner.command, buildArgs(targetUrl), {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PUPPETEER_CACHE_DIR: cacheDir,
+      PUPPETEER_EXECUTABLE_PATH: chromePath,
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    }
+  });
+
+  let usedUrl = url;
+  let run = runOnce(usedUrl);
+  const stderr = String(run.stderr || '');
+  const certFailed = /ERR_CERT_AUTHORITY_INVALID/i.test(stderr);
+  const canRetryHttp = /^https:\/\//i.test(url);
+  if (run.status !== 0 && certFailed && canRetryHttp) {
+    usedUrl = url.replace(/^https:/i, 'http:');
+    run = runOnce(usedUrl);
+  }
+
+  return { run, usedUrl };
+}
+
 export async function scanBatch(urls, cfg, sourceLabel = 'urls.txt') {
   const cwd = cfg.cwd || process.cwd();
   const cacheDir = path.resolve(cwd, '.cache', 'puppeteer');
@@ -62,27 +97,7 @@ export async function scanBatch(urls, cfg, sourceLabel = 'urls.txt') {
     const htmlFile = path.join(reportRoot, `${slug}.html`);
 
     const runner = pa11yInvocation(cwd);
-    const chromeLaunchConfig = JSON.stringify({
-      ignoreHTTPSErrors: true,
-      args: ['--allow-insecure-localhost', '--ignore-certificate-errors', '--no-sandbox', '--disable-dev-shm-usage']
-    });
-    const pa11yArgs = [...runner.args, url, '--reporter', 'json', '--standard', cfg.standard || 'WCAG2AAA', '--timeout', String(cfg.timeout), '--wait', String(cfg.wait), '--chrome-launch-config', chromeLaunchConfig];
-    if (cfg.includeAll || cfg.includeWarnings) pa11yArgs.push('--include-warnings');
-    if (cfg.includeAll || cfg.includeNotices) pa11yArgs.push('--include-notices');
-    if (Array.isArray(cfg.hideElements)) {
-      for (const s of cfg.hideElements) pa11yArgs.push('--hide-elements', s);
-    }
-
-    const run = spawnSync(runner.command, pa11yArgs, {
-      cwd,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PUPPETEER_CACHE_DIR: cacheDir,
-        PUPPETEER_EXECUTABLE_PATH: chromePath,
-        PUPPETEER_SKIP_DOWNLOAD: 'true'
-      }
-    });
+    const { run, usedUrl } = runPa11yScan({ runner, url, cfg, cwd, cacheDir, chromePath });
 
     const stdout = (run.stdout || '').trim();
     let issues = [];
@@ -94,7 +109,7 @@ export async function scanBatch(urls, cfg, sourceLabel = 'urls.txt') {
       } catch {
         issues = [];
       }
-      const customIssues = runKeyboardAudit(url, cwd, cacheDir, chromePath);
+      const customIssues = runKeyboardAudit(usedUrl, cwd, cacheDir, chromePath);
       if (customIssues.length) {
         const dedupe = new Set(issues.map((i) => `${i.code || ''}::${i.selector || ''}::${i.message || ''}`));
         for (const issue of customIssues) {
@@ -114,7 +129,7 @@ export async function scanBatch(urls, cfg, sourceLabel = 'urls.txt') {
         type: 'error',
         typeCode: 1,
         message: (run.stderr || 'Pa11y did not return JSON output.').trim(),
-        context: `Scan failed for ${url}`,
+        context: `Scan failed for ${usedUrl}`,
         selector: '',
         runner: 'pa11y-runner',
         runnerExtras: { exitStatus: run.status ?? 1 }
