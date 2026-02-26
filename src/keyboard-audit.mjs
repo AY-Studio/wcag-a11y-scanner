@@ -12,7 +12,7 @@ const timeout = Number(process.env.A11Y_TIMEOUT || 120000);
 const waitMs = Number(process.env.A11Y_WAIT || 1000);
 let chromePath = process.env.A11Y_CHROME_PATH || '';
 
-if (!chromePath) {
+function chromeCandidates() {
   const candidates = process.platform === 'darwin'
     ? [
         '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -29,7 +29,23 @@ if (!chromePath) {
           '/usr/bin/chromium-browser',
           '/usr/bin/chromium'
         ];
+  const seen = new Set();
+  const out = [];
+  if (chromePath) {
+    seen.add(chromePath);
+    out.push(chromePath);
+  }
   for (const candidate of candidates) {
+    if (!seen.has(candidate) && fs.existsSync(candidate)) {
+      seen.add(candidate);
+      out.push(candidate);
+    }
+  }
+  return out;
+}
+
+if (!chromePath) {
+  for (const candidate of chromeCandidates()) {
     if (fs.existsSync(candidate)) chromePath = candidate;
     if (chromePath) break;
   }
@@ -44,18 +60,30 @@ const pointerEvents = ['click', 'dblclick', 'mousedown', 'mouseup', 'mouseover',
 const keyboardEvents = ['keydown', 'keyup', 'keypress', 'focus', 'blur'];
 
 let browser;
+let launchError;
 
 try {
-  browser = await puppeteer.launch({
-    executablePath: chromePath,
-    args: [
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-      '--allow-insecure-localhost',
-      '--ignore-certificate-errors'
-    ],
-    ignoreHTTPSErrors: true
-  });
+  for (const candidate of chromeCandidates()) {
+    try {
+      browser = await puppeteer.launch({
+        executablePath: candidate,
+        args: [
+          '--no-sandbox',
+          '--disable-dev-shm-usage',
+          '--allow-insecure-localhost',
+          '--ignore-certificate-errors'
+        ],
+        ignoreHTTPSErrors: true
+      });
+      break;
+    } catch (error) {
+      launchError = error;
+    }
+  }
+
+  if (!browser) {
+    throw launchError || new Error('Unable to launch Chrome for keyboard audit.');
+  }
 
   const page = await browser.newPage();
 
