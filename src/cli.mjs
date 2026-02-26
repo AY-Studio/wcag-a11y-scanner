@@ -1,0 +1,107 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { loadConfig, writeInitConfig } from './config.mjs';
+import { readUrlList } from './utils.mjs';
+import { scanPage } from './scanners/page.mjs';
+import { scanBatch } from './scanners/batch.mjs';
+import { urlsFromSitemap } from './scanners/xml.mjs';
+
+function parseArgs(argv) {
+  const out = { _: [] };
+  for (let i = 2; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token.startsWith('--')) {
+      const key = token.slice(2);
+      const next = argv[i + 1];
+      if (next && !next.startsWith('--')) {
+        out[key] = next;
+        i += 1;
+      } else {
+        out[key] = true;
+      }
+    } else {
+      out._.push(token);
+    }
+  }
+  return out;
+}
+
+function usage() {
+  return [
+    'Usage:',
+    '  wcag-a11y-scanner init [--output-dir <dir>]',
+    '  wcag-a11y-scanner scan page <url> [--output-dir <dir>]',
+    '  wcag-a11y-scanner scan list <urls.txt> [--output-dir <dir>]',
+    '  wcag-a11y-scanner scan xml <sitemap.xml> [--base-url <url>] [--output-dir <dir>]'
+  ].join('\n');
+}
+
+export async function runCli(argv) {
+  const args = parseArgs(argv);
+  const [cmd, sub, target] = args._;
+  const cwd = process.cwd();
+
+  if (!cmd) {
+    console.log(usage());
+    return;
+  }
+
+  if (cmd === 'init') {
+    const outputDir = args['output-dir'] || undefined;
+    const configPath = writeInitConfig(cwd, outputDir ? { outputDir } : {});
+    console.log(`Created ${configPath}`);
+    console.log('Next run: wcag-a11y-scanner scan page https://example.local');
+    return;
+  }
+
+  if (cmd !== 'scan' || !sub || !target) {
+    console.log(usage());
+    return;
+  }
+
+  const cfg = loadConfig(cwd, {
+    cwd,
+    outputDir: args['output-dir'] || undefined,
+    includeWarnings: args['include-warnings'] === 'false' ? false : undefined,
+    includeNotices: args['include-notices'] === 'true' ? true : undefined
+  });
+
+  if (sub === 'page') {
+    const result = scanPage(target, cfg);
+    const errors = result.typeCounts.error || 0;
+    const warnings = result.typeCounts.warning || 0;
+    const notices = result.typeCounts.notice || 0;
+    const unknown = result.typeCounts.unknown || 0;
+    console.log(`Scan complete: ${result.issueCount} issue(s) [error=${errors}, warning=${warnings}, notice=${notices}, unknown=${unknown}]`);
+    console.log(`Saved report: ${result.jsonFile}`);
+    console.log(`Saved HTML: ${result.htmlFile}`);
+    return;
+  }
+
+  if (sub === 'list') {
+    const urls = readUrlList(path.resolve(target));
+    if (!urls.length) throw new Error(`No URLs found in ${target}`);
+    const result = scanBatch(urls, cfg, target);
+    console.log(`Saved batch reports to: ${result.reportRoot}`);
+    console.log(`Saved summary: ${result.summaryFile}`);
+    return;
+  }
+
+  if (sub === 'xml') {
+    const urls = urlsFromSitemap(target, args['base-url'] || '');
+    if (!urls.length) throw new Error(`No URLs discovered from sitemap: ${target}`);
+
+    const urlListDir = path.resolve(cwd, '.a11y-scanner');
+    fs.mkdirSync(urlListDir, { recursive: true });
+    const urlListFile = path.join(urlListDir, `urls-${Date.now()}.txt`);
+    fs.writeFileSync(urlListFile, `${urls.join('\n')}\n`, 'utf8');
+
+    const result = scanBatch(urls, cfg, path.relative(cwd, urlListFile));
+    console.log(`Saved URL list: ${urlListFile}`);
+    console.log(`Saved batch reports to: ${result.reportRoot}`);
+    console.log(`Saved summary: ${result.summaryFile}`);
+    return;
+  }
+
+  throw new Error(`Unknown scan mode: ${sub}`);
+}

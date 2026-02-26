@@ -1,0 +1,17 @@
+{
+  "name": "@camborne/wcag-a11y-scanner",
+  "version": "0.1.0",
+  "description": "WCAG A11y Scanner - reusable accessibility scanner CLI (Pa11y + custom audits + sitemap support)",
+  "type": "module",
+  "bin": {
+    "wcag-a11y-scanner": "./bin/a11y-scanner.mjs",
+    "a11y-scanner": "./bin/a11y-scanner.mjs"
+  },
+  "scripts": {
+    "check": "node --check ./bin/a11y-scanner.mjs && node --check ./src/cli.mjs && node --check ./src/scanners/page.mjs && node --check ./src/scanners/batch.mjs && node --check ./src/scanners/xml.mjs && node --check ./src/report-html.mjs && node --check ./src/keyboard-audit.mjs"
+  },
+  "dependencies": {
+    "pa11y": "^9.0.1",
+    "puppeteer": "^24.22.3"
+  }
+}
