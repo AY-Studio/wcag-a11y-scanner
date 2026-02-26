@@ -18,7 +18,10 @@ function statusesByLevel({ failedCriteria, targetLevel, scanErrorCount }) {
     const failedList = criteria[level].filter((criterion) => failedCriteria.has(criterion));
     const failedCount = failedList.length;
     const passedCount = totalCriteria - failedCount;
-    const status = failedCount === 0 ? 'PASS' : 'FAIL';
+    let status = failedCount === 0 ? 'PASS' : 'FAIL';
+    if (scanErrorCount > 0 && failedCount === 0) {
+      status = 'NOT RUN';
+    }
     return { level, totalCriteria, passedCount, failedCount, status };
   });
 
@@ -31,7 +34,7 @@ function statusesByLevel({ failedCriteria, targetLevel, scanErrorCount }) {
     cards,
     overall: {
       targetLevel,
-      status: requiredFailures === 0 && scanErrorCount === 0 ? 'PASS' : 'FAIL',
+      status: requiredFailures > 0 ? 'FAIL' : scanErrorCount > 0 ? 'NOT RUN' : 'PASS',
       requiredFailures,
       scanErrorCount
     }
@@ -80,6 +83,8 @@ function buildAudit({ pages, targetLevel, targetStandard, generatedAt, source })
     }
   }
 
+  const scanErrorCount = pages.filter((page) => page.status !== 'ok').length;
+
   const rows = [];
   for (const level of ['A', 'AA', 'AAA']) {
     for (const criterion of criteria[level]) {
@@ -87,15 +92,17 @@ function buildAudit({ pages, targetLevel, targetStandard, generatedAt, source })
       rows.push({
         criterion,
         level,
-        status: fail ? 'FAIL' : 'PASS',
+        status: fail ? 'FAIL' : scanErrorCount > 0 ? 'NOT RUN' : 'PASS',
         issueCount: fail ? fail.issueCount : 0,
         pageCount: fail ? fail.pages.size : 0,
-        sampleMessage: fail ? [...fail.messages][0] || '' : ''
+        sampleMessage: fail
+          ? [...fail.messages][0] || ''
+          : scanErrorCount > 0
+            ? 'Not evaluated due to one or more scan errors.'
+            : ''
       });
     }
   }
-
-  const scanErrorCount = pages.filter((page) => page.status !== 'ok').length;
   const levelStatus = statusesByLevel({ failedCriteria, targetLevel, scanErrorCount });
 
   return {
@@ -123,7 +130,7 @@ function buildAudit({ pages, targetLevel, targetStandard, generatedAt, source })
 
 function writeAuditHtml(reportPath, summary) {
   const levelCards = summary.levels.map((level) => {
-    const cls = level.status === 'PASS' ? 'pass' : 'fail';
+    const cls = level.status === 'PASS' ? 'pass' : level.status === 'FAIL' ? 'fail' : 'norun';
     return `<article class="level-card ${cls}"><h3>${esc(level.level)}</h3><p class="status">${esc(level.status)}</p><p class="meta">Pass ${level.passedCount}/${level.totalCriteria} · Fail ${level.failedCount}</p></article>`;
   }).join('');
 
@@ -131,7 +138,10 @@ function writeAuditHtml(reportPath, summary) {
     const rows = summary.criteria
       .filter((row) => row.level === level)
       .sort((a, b) => a.criterion.localeCompare(b.criterion))
-      .map((row) => `<tr><td>${esc(row.criterion)}</td><td><span class="mini ${row.status === 'PASS' ? 'pass' : 'fail'}">${esc(row.status)}</span></td><td>${row.issueCount}</td><td>${row.pageCount}</td><td>${esc(row.sampleMessage || '-')}</td></tr>`)
+      .map((row) => {
+        const cls = row.status === 'PASS' ? 'pass' : row.status === 'FAIL' ? 'fail' : 'norun';
+        return `<tr><td>${esc(row.criterion)}</td><td><span class="mini ${cls}">${esc(row.status)}</span></td><td>${row.issueCount}</td><td>${row.pageCount}</td><td>${esc(row.sampleMessage || '-')}</td></tr>`;
+      })
       .join('');
     return `<h3>${esc(level)} Guidelines</h3><div class="table"><table><thead><tr><th>SC</th><th>Status</th><th>Issues</th><th>Pages</th><th>Sample</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No criteria.</td></tr>'}</tbody></table></div>`;
   }
@@ -150,19 +160,20 @@ h1{margin:0 0 8px;font-size:28px}p{margin:0 0 10px;color:#334155}
 .top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0 18px}
 .badge{display:inline-block;padding:8px 12px;border-radius:999px;font-weight:700;font-size:13px;border:1px solid}
 .badge.pass{background:#dcfce7;color:#166534;border-color:#86efac}.badge.fail{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
+.badge.norun{background:#fef3c7;color:#92400e;border-color:#fcd34d}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
 .metric{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px}.metric .k{font-size:11px;text-transform:uppercase;color:#64748b}.metric .v{font-size:24px;font-weight:700;color:#0f172a}
 .level-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:6px 0 18px}
 .level-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px}.level-card h3{margin:0 0 4px}.level-card .status{margin:0 0 4px;font-weight:700}.level-card .meta{margin:0;color:#475569;font-size:14px}
-.level-card.pass{border-color:#86efac}.level-card.fail{border-color:#fca5a5}
+.level-card.pass{border-color:#86efac}.level-card.fail{border-color:#fca5a5}.level-card.norun{border-color:#fcd34d}
 .table{overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;margin-top:8px}
 table{width:100%;border-collapse:collapse;min-width:760px}th,td{padding:9px 10px;border-bottom:1px solid #e2e8f0;vertical-align:top}th{text-align:left;background:#f8fafc}
-.mini{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid}.mini.pass{background:#dcfce7;color:#166534;border-color:#86efac}.mini.fail{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
+.mini{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid}.mini.pass{background:#dcfce7;color:#166534;border-color:#86efac}.mini.fail{background:#fee2e2;color:#991b1b;border-color:#fca5a5}.mini.norun{background:#fef3c7;color:#92400e;border-color:#fcd34d}
 .note{font-size:13px;color:#475569;margin-top:12px}
 </style></head><body><main>
 <h1>WCAG Compliance Audit</h1>
 <p>Source: <code>${esc(summary.source)}</code> · Generated: ${esc(summary.generatedAt)}</p>
-<div class="top"><span class="badge ${summary.overall.status === 'PASS' ? 'pass' : 'fail'}">${esc(summary.target.standard)} ${esc(summary.overall.status)}</span></div>
+<div class="top"><span class="badge ${summary.overall.status === 'PASS' ? 'pass' : summary.overall.status === 'FAIL' ? 'fail' : 'norun'}">${esc(summary.target.standard)} ${esc(summary.overall.status)}</span></div>
 <section class="metrics">
 <div class="metric"><div class="k">Pages Requested</div><div class="v">${summary.pages.requested}</div></div>
 <div class="metric"><div class="k">Pages Scanned</div><div class="v">${summary.pages.scanned}</div></div>
@@ -198,7 +209,7 @@ export async function runAuditPage(url, cfg, sourceLabel = 'page') {
   const runCfg = {
     ...cfg,
     standard: targetStandard,
-    outputDir: cfg.auditOutputDir || 'audits'
+    outputDir: cfg.auditOutputDir || 'a11y/audits'
   };
 
   const pageResult = await scanPage(url, runCfg);
@@ -233,7 +244,7 @@ export async function runAuditBatch(urls, cfg, sourceLabel = 'urls.txt') {
   const runCfg = {
     ...cfg,
     standard: targetStandard,
-    outputDir: cfg.auditOutputDir || 'audits'
+    outputDir: cfg.auditOutputDir || 'a11y/audits'
   };
 
   const batchResult = await scanBatch(urls, runCfg, sourceLabel);

@@ -44,5 +44,5 @@ export function criteriaByLevel() {
 
 export function targetStandardFromLevel(level = '') {
   const clean = String(level || '').toUpperCase();
-  return clean === 'AAA' ? 'WCAG22AAA' : 'WCAG22AA';
+  return clean === 'AAA' ? 'WCAG2AAA' : 'WCAG2AA';
 }

@@ -75,7 +75,7 @@ wcag-a11y-scanner audit page "https://example.local" --level AAA
 - Files: per-page `.json` + `.html`, plus batch `summary.html`
 
 ### Audit output
-- Default folder: `audits/<YYYY-MM-DD-HHMMSS>/`
+- Default folder: `a11y/audits/<YYYY-MM-DD-HHMMSS>/`
 - Files:
   - `audit.json`
   - `audit.html`

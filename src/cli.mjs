@@ -80,7 +80,7 @@ export async function runCli(argv) {
         ...cfg,
         auditLevel,
         standard: args.standard || targetStandardFromLevel(auditLevel),
-        auditOutputDir: args['output-dir'] || 'audits'
+        auditOutputDir: args['output-dir'] || 'a11y/audits'
       }, target);
       console.log(`Audit complete: ${result.summary.overall.status} (${result.summary.target.standard})`);
       console.log(`Saved audit JSON: ${result.auditJsonFile}`);
@@ -106,7 +106,7 @@ export async function runCli(argv) {
         ...cfg,
         auditLevel,
         standard: args.standard || targetStandardFromLevel(auditLevel),
-        auditOutputDir: args['output-dir'] || 'audits'
+        auditOutputDir: args['output-dir'] || 'a11y/audits'
       });
       console.log(`Audit complete: ${result.summary.overall.status} (${result.summary.target.standard})`);
       console.log(`Saved audit JSON: ${result.auditJsonFile}`);
@@ -132,7 +132,7 @@ export async function runCli(argv) {
           ...cfg,
           auditLevel,
           standard: args.standard || targetStandardFromLevel(auditLevel),
-          auditOutputDir: args['output-dir'] || 'audits'
+          auditOutputDir: args['output-dir'] || 'a11y/audits'
         },
         cwd
       );
