@@ -1,5 +1,5 @@
 {
-  "name": "@camborne/wcag-a11y-scanner",
+  "name": "@ay-studio/wcag-a11y-scanner",
   "version": "0.1.0",
   "description": "WCAG A11y Scanner - reusable accessibility scanner CLI (Pa11y + custom audits + sitemap support)",
   "type": "module",
@@ -9,6 +9,26 @@
   },
   "scripts": {
     "check": "node --check ./bin/a11y-scanner.mjs && node --check ./src/cli.mjs && node --check ./src/scanners/page.mjs && node --check ./src/scanners/batch.mjs && node --check ./src/scanners/xml.mjs && node --check ./src/report-html.mjs && node --check ./src/keyboard-audit.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AY-Studio/wcag-a11y-scanner.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AY-Studio/wcag-a11y-scanner/issues"
+  },
+  "homepage": "https://github.com/AY-Studio/wcag-a11y-scanner#readme",
+  "license": "MIT",
+  "keywords": [
+    "a11y",
+    "accessibility",
+    "wcag",
+    "pa11y",
+    "scanner",
+    "sitemap"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "pa11y": "^9.0.1",
