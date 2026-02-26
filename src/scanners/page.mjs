@@ -6,6 +6,7 @@ import { ensureDir, slugify, timestampFolder } from '../utils.mjs';
 import { writePageHtmlSummary } from '../report-html.mjs';
 
 function runKeyboardAudit(url, cwd, cacheDir, chromePath) {
+  if (!chromePath) return [];
   const script = new URL('../keyboard-audit.mjs', import.meta.url);
   const result = spawnSync(process.execPath, [script.pathname, url], {
     encoding: 'utf8',
@@ -25,6 +26,29 @@ function runKeyboardAudit(url, cwd, cacheDir, chromePath) {
   } catch {
     return [];
   }
+}
+
+function systemChromePath() {
+  const candidates = process.platform === 'darwin'
+    ? [
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+      ]
+    : process.platform === 'win32'
+      ? [
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+        ]
+      : [
+          '/usr/bin/google-chrome',
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/chromium-browser',
+          '/usr/bin/chromium'
+        ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 function pa11yInvocation(cwd) {
@@ -52,34 +76,58 @@ function runPa11yScan({ runner, url, cfg, cwd, cacheDir, chromePath }) {
     return args;
   };
 
-  const runOnce = (targetUrl) => spawnSync(runner.command, buildArgs(targetUrl), {
+  const runOnce = (targetUrl, executablePath) => spawnSync(runner.command, buildArgs(targetUrl), {
     cwd,
     encoding: 'utf8',
     env: {
       ...process.env,
       PUPPETEER_CACHE_DIR: cacheDir,
-      PUPPETEER_EXECUTABLE_PATH: chromePath,
+      ...(executablePath ? { PUPPETEER_EXECUTABLE_PATH: executablePath } : {}),
       PUPPETEER_SKIP_DOWNLOAD: 'true'
     }
   });
 
-  let usedUrl = url;
-  let run = runOnce(usedUrl);
-  const stderr = String(run.stderr || '');
-  const certFailed = /ERR_CERT_AUTHORITY_INVALID/i.test(stderr);
+  const attempts = [];
+  if (chromePath) attempts.push(chromePath);
+  const systemChrome = systemChromePath();
+  if (systemChrome && systemChrome !== chromePath) attempts.push(systemChrome);
+  attempts.push(null);
+
   const canRetryHttp = /^https:\/\//i.test(url);
-  if (run.status !== 0 && certFailed && canRetryHttp) {
-    usedUrl = url.replace(/^https:/i, 'http:');
-    run = runOnce(usedUrl);
+  let last = null;
+
+  for (const attemptPath of attempts) {
+    let usedUrl = url;
+    let run = runOnce(usedUrl, attemptPath);
+    if ((run.stdout || '').trim().startsWith('[')) return { run, usedUrl, usedChromePath: attemptPath };
+
+    const stderr = String(run.stderr || '');
+    const certFailed = /ERR_CERT_AUTHORITY_INVALID/i.test(stderr);
+    if (run.status !== 0 && certFailed && canRetryHttp) {
+      usedUrl = url.replace(/^https:/i, 'http:');
+      run = runOnce(usedUrl, attemptPath);
+      if ((run.stdout || '').trim().startsWith('[')) return { run, usedUrl, usedChromePath: attemptPath };
+    }
+
+    last = { run, usedUrl, usedChromePath: attemptPath };
+    const launchFailed = /Failed to launch the browser process|TROUBLESHOOTING: https:\/\/pptr\.dev\/troubleshooting/i.test(String(run.stderr || ''));
+    if (!launchFailed) {
+      return last;
+    }
   }
 
-  return { run, usedUrl };
+  return last || { run: runOnce(url, null), usedUrl: url, usedChromePath: null };
 }
 
 export async function scanPage(url, cfg) {
   const cwd = cfg.cwd || process.cwd();
   const cacheDir = path.resolve(cwd, '.cache', 'puppeteer');
-  const chromePath = await ensureChrome(cacheDir);
+  let chromePath = null;
+  try {
+    chromePath = await ensureChrome(cacheDir);
+  } catch {
+    chromePath = systemChromePath();
+  }
 
   const reportRoot = path.resolve(cwd, cfg.outputDir, timestampFolder());
   ensureDir(reportRoot);
@@ -88,7 +136,7 @@ export async function scanPage(url, cfg) {
   const htmlFile = path.join(reportRoot, `${slug}.html`);
 
   const runner = pa11yInvocation(cwd);
-  const { run, usedUrl } = runPa11yScan({ runner, url, cfg, cwd, cacheDir, chromePath });
+  const { run, usedUrl, usedChromePath } = runPa11yScan({ runner, url, cfg, cwd, cacheDir, chromePath });
 
   let issues = [];
   const stdout = (run.stdout || '').trim();
@@ -111,7 +159,7 @@ export async function scanPage(url, cfg) {
     }];
   }
 
-  const customIssues = runKeyboardAudit(usedUrl, cwd, cacheDir, chromePath);
+  const customIssues = runKeyboardAudit(usedUrl, cwd, cacheDir, usedChromePath || chromePath);
   if (customIssues.length) {
     const dedupe = new Set(issues.map((i) => `${i.code || ''}::${i.selector || ''}::${i.message || ''}`));
     for (const issue of customIssues) {
